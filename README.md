@@ -1,4 +1,4 @@
-# INTRODUCTION TO BAYESIAN STATISTICS WITH APPLICATIONS
+# Introduction to Bayesian Statistics with Applications
 
 Bayesian statistical inference provides a formal mathematical framework for encoding our existing knowledge using probabilities and then using observed data to update these probabilities. Such Bayesian learning underpins many modern data science applications such as forecasting election results, monitoring spread of infectious diseases, and numerous machine learning tasks, to name just a few. In this course, we will introduce students to mathematical formalism of Bayesian inference and will demonstrate how to interpret key quantities produced by this inferential framework. We will also explain main computational ideas that make Bayesian inference possible: Monte Carlo and Markov chain Monte Carlo algorithms. All mathematical concepts will be illustrated with computations and data-driven examples.
 
