@@ -1,3 +1,6 @@
-# icmu-bayes
+# INTRODUCTION TO BAYESIAN STATISTICS WITH APPLICATIONS
 
-Materials for the short course
+Bayesian statistical inference provides a formal mathematical framework for encoding our existing knowledge using probabilities and then using observed data to update these probabilities. Such Bayesian learning underpins many modern data science applications such as forecasting election results, monitoring spread of infectious diseases, and numerous machine learning tasks, to name just a few. In this course, we will introduce students to mathematical formalism of Bayesian inference and will demonstrate how to interpret key quantities produced by this inferential framework. We will also explain main computational ideas that make Bayesian inference possible: Monte Carlo and Markov chain Monte Carlo algorithms. All mathematical concepts will be illustrated with computations and data-driven examples.
+
+Software requirements: RStudio and R (4.5.1 or above) + ideally students will set up their computing environment in advance following the “Getting set up” section https://www.bayesrulesbook.com/preface#setup of the following textbook, freely available online: https://www.bayesrulesbook.com. In addition, we will try to provide access to a cloud computing environment, so students can follow the material and complete homework even if they couldn’t make their local computing environment satisfy the stated requirements.
+
