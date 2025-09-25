@@ -1,0 +1,199 @@
+---
+title: "Monte Carlo Integration Examples"
+format: html
+theme: cerulean
+---
+
+We are going to set the seed first to make our stochastic calculations reproducible -- useful for debugging
+
+```{r}
+set.seed(09252025)
+```
+
+## Example 1: second moment of the Beta distribution $X \sim \text{Beta}(\alpha, \beta)$
+
+Let's compute the second moment of the posterior distribution of the population proporotion that we derived in Lecture 1:
+
+```{r}
+prior_alpha <- 2
+prior_beta <- 20
+
+num_positives2 <- 10
+num_samples <- 100
+
+# Parameters of the Beta posterior distribution 2
+posterior_alpha2 = prior_alpha + num_positives2
+posterior_beta2 = prior_beta + num_samples - num_positives2 
+```
+
+a.  Theory tells us that $E(X) = \frac{\alpha(\alpha + 1)}{(\alpha + \beta + 1)(\alpha + \beta)}$
+
+```{r}
+(beta_2nd_moment_theory <- posterior_alpha2 * (posterior_alpha2 + 1) / ((posterior_alpha2 + posterior_beta2 + 1) * (posterior_alpha2 + posterior_beta2))) # Putting parentheses around line prints value
+```
+
+b.  deterministic integration
+
+```{r}
+beta_integrand <- function(x){
+  return(x^2 * dbeta(x, shape1 = posterior_alpha2, shape2 = posterior_beta2))
+}
+
+(beta_2nd_moment_det <- integrate(beta_integrand, lower = 0, upper = 1))
+```
+
+c.  Monte Carlo integration
+
+```{r}
+beta_mcarlo_iterations <- 1000
+
+beta_sample <- rbeta(beta_mcarlo_iterations, shape1 = posterior_alpha2, shape2 = posterior_beta2)
+
+(beta_2nd_moment_mc <- mean(beta_sample^2))
+```
+
+Visualize the Beta sample with a histogram
+
+```{r}
+library(ggplot2)
+
+ggplot(data.frame(beta_sample), aes(x = beta_sample)) +
+  geom_histogram(bins = 30, fill = "skyblue", alpha = 0.7, color = "black") +
+  labs(
+    title = "Histogram of Beta Sample",
+    subtitle = paste0("Beta(", posterior_alpha2, ", ", posterior_beta2, ") with ", beta_mcarlo_iterations, " samples"),
+    x = "Beta Sample Values",
+    y = "Frequency"
+  ) +
+  theme_bw()
+```
+
+Monte Carlo errors (optional, we haven't talked about this)
+
+```{r}
+(beta_mcarlo_error <- sd(beta_sample^2) / sqrt(beta_mcarlo_iterations))
+```
+
+Monte Carlo 95% confidence intervals
+
+```{r}
+c(
+  beta_2nd_moment_mc - 1.96 * beta_mcarlo_error, 
+  beta_2nd_moment_mc + 1.96 * beta_mcarlo_error
+)
+```
+
+Compare the three answers
+
+```{r}
+beta_2nd_moment_theory
+beta_2nd_moment_det
+beta_2nd_moment_mc
+
+c(
+  beta_2nd_moment_mc - 1.96 * beta_mcarlo_error, 
+  beta_2nd_moment_mc + 1.96 * beta_mcarlo_error
+)
+```
+
+We can also compute quantiles via Monte Carlo.
+
+First, let's compute the posterior median and 95% creidble interval using numeric integration built into qbeta() function.
+
+```{r}
+(posterior_median_det <- qbeta(0.5, shape1=posterior_alpha2, shape2=posterior_beta2))
+
+(posterior_bci <- c(qbeta(0.025, shape1=posterior_alpha2, shape2=posterior_beta2), qbeta(0.975, shape1=posterior_alpha2, shape2=posterior_beta2)))
+```
+
+Now lets use emperical quantiles from our Monte Carlo sample.
+
+```{r}
+(posterior_median_mc <- quantile(beta_sample, probs=0.5))
+
+(posterior_bci <- quantile(beta_sample, probs=c(0.025, 0.975)))
+```
+
+## Example 2: integral of $e^{x^4 - x^2}$ over \[0,1\]
+
+Define an integrand
+
+```{r}
+integrand_function <- function(x){
+  return(exp(x^4 - x^2))
+}
+```
+
+Plot the integrand on the interval \[0,1\]
+
+```{r}
+library(ggplot2)
+
+plot_data <- data.frame(x = seq(0, 1, length = 100)) # Make a vector for the x values
+
+ggplot(data = plot_data, aes(x)) +
+  geom_function(fun = integrand_function, colour = "red") +
+  theme_bw() +
+  annotate(
+    geom = "text", 
+    x = 0.6, 
+    y = 0.95,
+    label = "y == e^{x^4 - x^2}", 
+    parse = TRUE,
+    size = 10
+  )
+```
+
+### Deterministic numerical integration from 0 to 1
+
+Notice that we are passing function `integrand_function` as an argument. Also, the integral can be seen as $E(e^{U^4 - U^2})$, where $U \sim Uniform(0, 1)$.
+
+```{r}
+(det_int <- integrate(integrand_function, lower = 0, upper = 1))
+```
+
+The function `integrate()` returns an object, not a value to find out what is in the object, type `names(det_int)`
+
+```{r}
+names(det_int)
+
+(det_int$value)
+(det_int$message)
+```
+
+### Monte Carlo integration
+
+By default `runif()` defines uniform distribution on \[0,1\]
+
+```{r}
+mcarlo_iterations <- 1000
+
+unif_sample <- runif(mcarlo_iterations)
+```
+
+arithmetic average
+
+```{r}
+(mcarlo_int = mean(integrand_function(unif_sample))) 
+```
+
+Monte Carlo error
+
+```{r}
+(mcarlo_error <- sd(integrand_function(unif_sample)) / sqrt(mcarlo_iterations))
+```
+
+Monte Carlo 95% confidence interval
+
+```{r}
+(c(
+  mcarlo_int - 1.96 * mcarlo_error, 
+  mcarlo_int + 1.96 * mcarlo_error
+))
+```
+
+Compare to the deterministic numerical integration
+
+```{r}
+(det_int)
+```
