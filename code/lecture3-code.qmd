@@ -1,0 +1,331 @@
+---
+title: "Markov chains and MCMC"
+format: html
+theme: cerulean
+---
+
+
+```{r}
+set.seed(9292025)
+```
+
+## Ehrenfest model of diffusion
+
+Below is a function that generates a random transition from any state of the system (number of gas molecules) to one of the two possible next states.
+\[
+  blah
+\]
+
+```{r}
+#' Generate the next state of the Ehrenfest diffusion model
+#'
+#' @param cur_state Current state of the Ehrenfest diffusion model (needs to be >0 and < num_mol)
+#' @param num_mol Total number of molecules in the Ehrenfest diffusion model (positive number)
+#'
+#' @return an integer that is either (cur_state+1) or (cur_state-1)
+#'
+#' @examples
+#' next_state(32, 1000)
+next_state = function(cur_state, num_mol){
+  return.value=NULL
+
+  if (runif(1)<cur_state/num_mol){
+    return_value = cur_state-1
+  }else{
+    return_value = cur_state+1
+  }
+
+  return(return_value)
+}
+```
+
+Let's initialize the system and allocate memory for a vector where we will keep our simulation results. We also are setting the number of iternations (simulation size) here.
+
+```{r}
+## set the number of molecules and the number of iterations
+my_num_mol = 100
+sim_size = 1000
+
+## initialize the chain
+my_draws = numeric(sim_size)
+my_draws[1] = sample(c(0:my_num_mol), size=1)
+```
+
+Let's simulate our Markov chain using a for loop.
+
+```{r}
+for (i in 2:sim_size){
+  my_draws[i] = next_state(my_draws[i-1], my_num_mol)
+}
+```
+
+Let's visualize the Markov chain path as a time series.
+
+```{r}
+library(ggplot2)
+
+# Create a data frame for ggplot2
+chain_data <- data.frame(
+  time_step = 1:sim_size,
+  state = my_draws
+)
+
+ggplot(chain_data, aes(x = time_step, y = state)) +
+  geom_line(color = "black", linewidth = 0.7) +
+  labs(
+    x = "Time Step",
+    y = "Ehrenfest State",
+    title = "Markov Chain Path - Ehrenfest Diffusion Model"
+  ) +
+  ylim(0, 100) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 14),
+    title = element_text(size=14)
+  )
+```
+
+Let's compute sample mean and sample variance of the Markov chain path (time averages) and compare them to the mean and variance of the stationary distribution, $\text{Beta}\left(N,\frac{1}{2}\right)$.
+
+```{r}
+## get the "time averages"
+mean(my_draws)
+var(my_draws)
+
+## get the "space averages," theoretical binomial
+## mean and variance
+my_num_mol/2
+my_num_mol/4
+```
+
+Now let's repeat the simulation with a larger number of iterations.
+
+```{r}
+## set the number of molecules and the number of iterations
+my_num_mol <- 100
+sim_size <- 10000
+
+## initialize the chain
+my_draws <- numeric(sim_size)
+my_draws[1] <- sample(c(0:my_num_mol), size=1)
+
+for (i in 2:sim_size){
+  my_draws[i] <- next_state(my_draws[i-1], my_num_mol)
+}
+
+# Create a data frame for ggplot2
+chain_data <- data.frame(
+  time_step = 1:sim_size,
+  state = my_draws
+)
+
+ggplot(chain_data, aes(x = time_step, y = state)) +
+  geom_line(color = "black", linewidth = 0.7) +
+  labs(
+    x = "Time Step",
+    y = "Ehrenfest State",
+    title = "Markov Chain Path - Ehrenfest Diffusion Model"
+  ) +
+  ylim(0, 100) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 14),
+    title = element_text(size=14)
+  )
+```
+
+Let's take a look at the time and space averages again.
+
+```{r}
+## get the "time averages"
+mean(my_draws)
+var(my_draws)
+
+## get the "space averages," theoretical binomial
+## mean and variance
+my_num_mol/2
+my_num_mol/4
+```
+
+We see that the Ergodic theorem works: the time and space averages become closer as we increase the number of iterations.
+
+## MCMC sampling from the standard normal distribution
+Suppose our target is a univariate standard normal distribution with density $f(x) = 1/(\sqrt{2\pi})e^{-x^2/2}$.
+Given current state $x^{(t)}$, we generate two uniform r.v.s $U_1 \sim U[-\delta,\delta]$ and 
+$U_2 \sim U[0,1]$. Then set
+\begin{equation*}
+x^{(t+1)} = 
+\begin{cases}
+  x^{(t)} + U_1 &\text{ if } U_2 \le \min\left\{e^{\left[\left(x^{(t)}\right)^2 - (x^{(t)}+U_1)^2\right]/2},1\right\} \\
+  x^{(t)} & \text{ otherwise}.
+\end{cases}
+\end{equation*}
+$\delta$ is a tuning parameter. Large $\delta$ leads to small acceptance rate, small $\delta$ leads to slow
+exploration of the state space. The rule of thumb for random walk proposals is to keep acceptance probabilities around 30-40\%. 
+
+Let's implement this MCMC. First, let's write a function that generates proposals.
+
+```{r}
+#' Generate the next state the Rosenbluth-Hastings (R-H) chain targeting N(0,1) distribution, using a uniform random walk proposal
+#'
+#' @param cur_value Current state of R-H Markov chain
+#' @param tuning_par Tuning parameter of the uniform random walk, where a random increment ~ Unif[-tuning_par, tuning_par] is added to the current state of the Markov chain (detla in the notes)
+#'
+#' @return Numeric vector of length 2. The first element of the vector contains the next state of the M-H Markov chain. The second element contains 0 if the proposed values was rejected and 1 otherwise.
+#'
+#' @examples
+#' unif_rw_next(0.4, 5.0)
+unif_rw_next = function(cur_value, tuning_par){
+
+  return_value <- c(cur_value, 0)
+
+  prop_value <- cur_value + runif(1, min=-tuning_par, max=tuning_par)
+  
+  if (runif(1) < exp((cur_value^2 - prop_value^2)/2)){
+    return_value <- c(prop_value, 1)
+  }
+
+  return(return_value)
+}
+```
+
+Let's initialize the chain and allocate memory for MCMC output
+
+```{r}
+mcmc_size <- 10000
+start_value <- 5.0
+
+
+mcmc_out_small_jumps <- matrix(0, nrow=(mcmc_size), ncol=2)
+colnames(mcmc_out_small_jumps) <- c("state", "acc_status")
+
+cur_state <- c(start_value,1)
+mcmc_out_small_jumps[1,] <- cur_state
+```
+
+Running MCMC in a for loop.
+
+```{r}
+for (i in 2:mcmc_size){
+  mcmc_out_small_jumps[i,] <- unif_rw_next(mcmc_out_small_jumps[i-1,1], 0.05)
+}
+```
+
+Let's compute the acceptance probability (fraction of iterations, during which we accepted proposed values) and mean of the Markov path. The latter should be close to zero because the mean of our target distribution is zero.
+
+```{r}
+#| fig-height: 3
+#| fig-width: 10
+
+library(ggplot2)
+library(gridExtra)
+
+# Create data frame for small jumps MCMC
+mcmc_data_small <- data.frame(
+  iteration = 1:mcmc_size,
+  state = mcmc_out_small_jumps[,"state"]
+)
+
+# Trace plot
+trace_plot_small <- ggplot(mcmc_data_small, aes(x = iteration, y = state)) +
+  geom_line(color = "black", size = 0.5) +
+  labs(
+    x = "Iteration",
+    y = "MCMC State",
+    title = "Trace Plot (small jumps)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 14)
+  )
+
+# Histogram
+hist_plot_small <- ggplot(mcmc_data_small, aes(x = state)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black", alpha = 0.7) +
+  labs(
+    x = "MCMC State",
+    y = "Frequency",
+    title = "Target Distribution Histogram"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 14)
+  )
+
+# Arrange plots side by side
+grid.arrange(trace_plot_small, hist_plot_small, ncol = 2, heights = unit(3, "in"))
+```
+
+
+Now let's increase our tuning parameter $\delta$ to make larger jumps during MCMC.
+
+```{r}
+#| fig-height: 3
+#| fig-width: 10
+
+mcmc_out_large_jumps = matrix(0, nrow=(mcmc_size), ncol=2)
+colnames(mcmc_out_large_jumps) = c("state", "acc_status")
+
+cur_state = c(start_value,1)
+mcmc_out_large_jumps[1,] = cur_state
+
+for (i in 2:mcmc_size){
+
+  cur_state = unif_rw_next(mcmc_out_large_jumps[i-1,1], 5)
+
+  mcmc_out_large_jumps[i,] = cur_state
+}
+
+## acceptance probability
+mean(mcmc_out_large_jumps[,"acc_status"])
+
+## mean of the target distribution
+mean(mcmc_out_large_jumps[,"state"])
+## sd of the target distribution
+sd(mcmc_out_large_jumps[,"state"])
+
+# Create data frame for large jumps MCMC
+mcmc_data_large <- data.frame(
+  iteration = 1:mcmc_size,
+  state = mcmc_out_large_jumps[,"state"]
+)
+
+# Trace plot
+trace_plot_large <- ggplot(mcmc_data_large, aes(x = iteration, y = state)) +
+  geom_line(color = "black", size = 0.5) +
+  labs(
+    x = "Iteration",
+    y = "MCMC State",
+    title = "Trace Plot (large jumps)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 14)
+  )
+
+# Histogram
+hist_plot_large <- ggplot(mcmc_data_large, aes(x = state)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black", alpha = 0.7) +
+  labs(
+    x = "MCMC State",
+    y = "Frequency",
+    title = "Target Distribution Histogram"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 14)
+  )
+
+# Arrange plots side by side
+grid.arrange(trace_plot_large, hist_plot_large, ncol = 2, heights = unit(3, "in"))
+```
