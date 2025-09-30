@@ -4,7 +4,6 @@ format: html
 theme: cerulean
 ---
 
-
 ```{r}
 set.seed(9292025)
 ```
@@ -12,9 +11,6 @@ set.seed(9292025)
 ## Ehrenfest model of diffusion
 
 Below is a function that generates a random transition from any state of the system (number of gas molecules) to one of the two possible next states.
-\[
-  blah
-\]
 
 ```{r}
 #' Generate the next state of the Ehrenfest diffusion model
@@ -152,20 +148,16 @@ my_num_mol/4
 We see that the Ergodic theorem works: the time and space averages become closer as we increase the number of iterations.
 
 ## MCMC sampling from the standard normal distribution
-Suppose our target is a univariate standard normal distribution with density $f(x) = 1/(\sqrt{2\pi})e^{-x^2/2}$.
-Given current state $x^{(t)}$, we generate two uniform r.v.s $U_1 \sim U[-\delta,\delta]$ and 
-$U_2 \sim U[0,1]$. Then set
-\begin{equation*}
+
+Suppose our target is a univariate standard normal distribution with density $f(x) = 1/(\sqrt{2\pi})e^{-x^2/2}$. Given current state $x^{(t)}$, we generate two uniform r.v.s $U_1 \sim U[-\delta,\delta]$ and $U_2 \sim U[0,1]$. Then set \begin{equation*}
 x^{(t+1)} = 
 \begin{cases}
   x^{(t)} + U_1 &\text{ if } U_2 \le \min\left\{e^{\left[\left(x^{(t)}\right)^2 - (x^{(t)}+U_1)^2\right]/2},1\right\} \\
   x^{(t)} & \text{ otherwise}.
 \end{cases}
-\end{equation*}
-$\delta$ is a tuning parameter. Large $\delta$ leads to small acceptance rate, small $\delta$ leads to slow
-exploration of the state space. The rule of thumb for random walk proposals is to keep acceptance probabilities around 30-40\%. 
+\end{equation*} $\delta$ is a tuning parameter. Large $\delta$ leads to small acceptance rate, small $\delta$ leads to slow exploration of the state space. The rule of thumb for random walk proposals is to keep acceptance probabilities around 30-40%.
 
-Let's implement this MCMC. First, let's write a function that generates proposals.
+Let's implement this MCMC. First, let's write a function that generates proposals, accepts/rejects them, and records the accept/reject decision as a binary variable.
 
 ```{r}
 #' Generate the next state the Rosenbluth-Hastings (R-H) chain targeting N(0,1) distribution, using a uniform random walk proposal
@@ -261,7 +253,6 @@ hist_plot_small <- ggplot(mcmc_data_small, aes(x = state)) +
 # Arrange plots side by side
 grid.arrange(trace_plot_small, hist_plot_small, ncol = 2, heights = unit(3, "in"))
 ```
-
 
 Now let's increase our tuning parameter $\delta$ to make larger jumps during MCMC.
 
