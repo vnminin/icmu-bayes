@@ -1,0 +1,324 @@
+---
+title: "Beta-Binomial and SIR Examples"
+author:
+  - name: Isaac Goldstein
+  - name: Volodymyr Minin (mostly Isaac)
+format: html
+execute: 
+  cache: true
+theme: cerulean
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r}
+set.seed(10022025)
+```
+
+## Beta-binomial hiearchical model
+
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(posterior)
+library(patchwork)
+#options(mc.cores = parallelly::availableCores())
+rstan_options(auto_write = TRUE)
+```
+
+### Data
+
+```{r}
+rat_data = read.table("https://raw.githubusercontent.com/vnminin/icmu-bayes/refs/heads/main/code/rat_tumor.txt", header=TRUE)
+
+num_obs = dim(rat_data)[1]
+```
+
+### Fitting the model using rstan
+
+```{r message = FALSE, warning = FALSE}
+posterior_object <- list(priors_only = FALSE,
+                         num_obs = num_obs,
+                         x = rat_data$x,
+                         n = rat_data$n,
+                         lambda_alpha = 0.1,
+                         lambda_beta = 0.1)
+
+chain = 4
+iterations = 1000
+seed = 236
+thin = 1
+
+posterior_fit <- stan(file = "https://raw.githubusercontent.com/vnminin/icmu-bayes/refs/heads/main/code/beta_binom.stan",
+                  data = posterior_object,
+                  seed = seed,
+                  iter = iterations,
+                  thin = thin,
+                  chain = chain)
+
+```
+
+### Assessing MCMC Diagnostics
+
+We can assess the traceplots for the log-posterior.
+We ran 4 independent Markov chains, so there should be 4 traceplots (ideally "very" overlapping ones).
+
+```{r}
+traceplot(posterior_fit, pars = "lp__")
+
+```
+
+### Visualizing the results
+
+```{r fig.width = 10, fig.height = 6}
+theta_draws <- posterior_fit %>% spread_draws(theta[i])
+
+vis_theta <- theta_draws %>% filter(i %% 2 == 1) %>%
+             arrange(i) %>%
+             mutate(theta_lab = paste("Theta ", i)) 
+
+
+theta_plot <- vis_theta %>% 
+              ggplot(aes(x = fct_inorder(theta_lab), y = theta)) +
+              geom_boxplot() +
+              theme_bw() +
+              xlab("Theta") +
+              ylab("Value") + 
+              theme(axis.text.x = element_text(angle = 90),
+                    text = element_text(size = 20))
+
+theta_plot
+```
+
+```{r}
+fixed_vars <- posterior_fit %>% spread_draws(alpha, beta) 
+
+plot_vars <- fixed_vars %>% pivot_longer(-c(.chain, .iteration, .draw), names_to = "name")
+
+fixed_plot <- plot_vars %>% 
+              ggplot(aes(x=value)) +
+              geom_histogram() +
+              facet_wrap(vars(name)) +
+              theme_bw() +
+              xlab("Value") + 
+              theme(text = element_text(size = 20))
+
+fixed_plot
+```
+
+## Fitting SIR model to case incidence data
+
+# Data
+
+Data were generated from a stochastic SIR Model using the Gillespie algorithm.
+R0 was 1.5, the average time spent in the infectious stage (1/$\nu$) was 7 days.
+Cases ($O$) were assumed to be noisy realizations of the number of new infectious individuals, modeled as a negative binomial random variable.
+Let $C(t)$ be cumulative infections at time $t$, then for day $k$: \begin{equation*}
+O_{k} \sim \text{Neg-Binom}(\rho \times (C(t_{k}) - C(t_{k-1})), \phi).
+\end{equation*} For simulations, $\rho$ was 0.2, and $\phi$ was 57.55.
+Cases were simulated on a daily time scale, then aggregated to weeks.
+Here is what the data looks like:
+
+```{r fig.width = 10, fig.height = 6}
+states <- read_csv("https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/sim_state.csv")
+
+test_data <- read_csv("https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/sim_data.csv")
+
+state_plot <- states %>% 
+              dplyr::select(t,S,I,R,C) %>% 
+              pivot_longer(-t) %>% 
+              mutate(Compartment = fct_relevel(name, "S", "I", "R", "C")) %>%
+              ggplot(aes(x = t, y = value, color = Compartment)) + 
+              geom_point() +
+              theme_bw() +
+              theme(text = element_text(size = 20)) +
+              ylab("Count") +
+              xlab("Day") +
+              ggtitle("Simulated Compartments")
+              
+              
+data_plot <- test_data %>% 
+             ggplot(aes(x = week, y = total_cases)) +
+             geom_point() + 
+             geom_line() + 
+             theme_bw() + 
+             xlab("Week") + 
+             ylab("Cases") + 
+             ggtitle("Simulated Data") +
+             theme(text = element_text(size = 20))
+
+combined_plot <- state_plot + data_plot + plot_layout(guides = "collect")
+
+combined_plot
+```
+
+# SIR ODE Model
+
+## Latent Dynamics
+
+$N$ is the population size, $\beta$ is the transmission rate, $1/\nu$ is the mean of the infectious period.
+Latent dynamics of the spread of the Epidemic are described by a system of ODEs.
+\begin{align*}
+\frac{dS}{dt} &= -\beta \times S/N \times I, \\
+\frac{dI}{dt} &= \beta \times S/N \times I - \nu \times I, \\
+\frac{dR}{dt} &= \nu \times I, \\
+\frac{dC}{dt} &= \beta \times S/N \times I.
+\end{align*}
+
+We put priors on $\nu$ and $R_{0} = \beta/\nu$, the basic reproduction number.
+
+## Initial Counts
+
+We have to specify the initial compartment counts in order to solve the sytem of ODEs.
+We define fractions of the population in each compartment at time 0 as: \begin{align*}
+S_{SIR} &= \frac{S(0)}{N},\\
+I_{IR} &= \frac{I(0)}{N-S(0)}.
+\end{align*} Then \begin{align*}
+S(0) &= S_{SIR} \times N,\\
+I(0) &= I_{IR} \times (N - S(0)), \\
+R(0) &= N - S(0) - I(0),\\
+C(0) &= 1.
+\end{align*} We put priors on the fractions in order to preserve the population size.
+In practice, these are very tight as the parameters are not identifiable from case data.
+
+## Surveillance Model
+
+We use the surveillance model used to generate the data.
+\begin{equation*}
+O_{k} \sim \text{Neg-Binom}(\rho \times (C(t_{k}) - C(t_{k-1})), \phi).
+\end{equation*}
+
+We put priors on $\rho$ and $\phi$.
+
+## Full Posterior
+
+Let $M(t) = (S(t), I(t), R(t), C(t))$ be the solution to this series of ODEs.
+Then the posterior of interest is: \begin{equation*}
+P(S_{SIR}, I_{IR}, R_{0}, \nu, \rho, \phi|O) \propto P(O|M(t), \rho, \phi)P(S_{SIR}, I_{IR}, R_{0}, \nu, \rho, \phi).
+\end{equation*}
+
+# Fitting the model using Rstan
+
+The following code fits the sir.stan model to this simulated data.
+The posterior_object contains both the data, as well as parameters specifying the model priors.
+These are all treated as "data" by stan.
+
+```{r message = FALSE, warning = FALSE}
+posterior_object <- list(priors_only = FALSE,
+                     num_obs = dim(test_data)[1],
+                     pop_size = 100000,
+                     cases = test_data$total_cases,
+                     obs_times = test_data$week,
+                     R0_mean = log(1),
+                     R0_sd = 0.2,
+                     nu_mean = log(1),
+                     nu_sd = 0.2,
+                     phi_mean = log(50),
+                     phi_sd = 0.2,
+                     rho_mean = log(0.2),
+                     rho_sd = 0.2,
+                     frac_S_mean = 6.90755,
+                     frac_S_sd = 0.05,
+                     frac_I_mean = 0,
+                     frac_I_sd = 0.05)
+
+chain = 4
+iterations = 1000
+seed = 236
+thin = 1
+
+posterior_fit <- stan(file = "https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/SIR.stan",
+                  data = posterior_object,
+                  seed = seed,
+                  iter = iterations,
+                  thin = thin,
+                  chain = chain)
+
+```
+
+# Assessing MCMC Diagnostics
+
+We can assess the traceplot for the scaled log-posterior.
+
+```{r}
+traceplot(posterior_fit, pars = "lp__")
+```
+
+
+# Visualizing the results
+
+We can visualize the changes in prior versus posterior distributions.
+Dots are medians, thick lines are 66% credible intervals, thin lines are 95% credible intervals.
+
+```{r fig.width = 10.5, fig.height = 10.5}
+
+fixed_posterior_draws <- posterior_fit %>% spread_draws(R0, nu, rho, phi, S_init, I_init, R_init) %>%
+  group_by(.chain, .iteration, .draw) %>%
+  pivot_longer(cols = c(R0, nu, rho, phi, S_init, I_init, R_init)) %>%
+  mutate(type = "posterior")
+
+fixed_names <- c("R0",
+                 "nu",
+                 "rho",
+                 "phi",
+                 "S_init",
+                 "I_init",
+                 "R_init")
+
+true_vals <- c(1.5,
+               1,
+               0.2,
+               57.55,
+               99900,
+               50,
+               50)
+
+true_frame <- data.frame(name = fixed_names, true_value = true_vals)
+
+truth_and_posterior <- fixed_posterior_draws %>%
+                         left_join(true_frame, by = "name")
+
+param_plot <- truth_and_posterior %>%
+  ggplot(aes(value, type, fill = type)) +
+  stat_halfeye(normalize = "xy")  +
+  geom_vline(aes(xintercept = true_value), linetype = "dotted", size = 1) +
+  facet_wrap(. ~ name, scales = "free_x") +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()) +
+  ggtitle("Fixed parameter true values and posteriors") +
+  theme(text = element_text(size = 20)) +
+  ylab("Type") + 
+  xlab("Value")
+
+param_plot
+```
+
+We can also visualize the posterior predictive to assess model fit.
+
+```{r}
+true_cases <- test_data %>%
+  dplyr::select(week, total_cases)
+posterior_predictive <- posterior_fit %>% spread_draws(gen_cases[i]) %>%
+  rename(week = i) %>%
+  group_by(week) %>%
+  median_qi(gen_cases, .width = c(0.5, 0.8, 0.95)) %>%
+  left_join(true_cases, by = "week")
+
+post_pred_plot <- posterior_predictive %>%
+  ggplot() +
+  geom_lineribbon(aes(x = week, y = gen_cases, ymin = .lower, ymax = .upper, fill = fct_rev(ordered(.width)))) +
+  geom_point(mapping = aes(x = week, y = total_cases), color = "coral1") +
+  scale_fill_brewer(name = "Credible Interval Width") +
+  # scale_fill_manual(values=c("skyblue1", "skyblue2", "skyblue3"), name="fill") +
+  theme_bw() +
+  ggtitle(paste0("Posterior Predictive")) + 
+  ylab("Cases") +
+  xlab("Week") +
+  theme(text = element_text(size = 20))
+
+post_pred_plot
+```
