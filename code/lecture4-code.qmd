@@ -122,9 +122,9 @@ Cases were simulated on a daily time scale, then aggregated to weeks.
 Here is what the data looks like:
 
 ```{r fig.width = 10, fig.height = 6}
-states <- read_csv("https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/sim_state.csv")
+states <- read_csv("https://raw.githubusercontent.com/vnminin/icmu-bayes/refs/heads/main/code/sim_state.csv")
 
-test_data <- read_csv("https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/sim_data.csv")
+test_data <- read_csv("https://raw.githubusercontent.com/vnminin/icmu-bayes/refs/heads/main/code/sim_data.csv")
 
 state_plot <- states %>% 
               dplyr::select(t,S,I,R,C) %>% 
@@ -229,7 +229,7 @@ iterations = 1000
 seed = 236
 thin = 1
 
-posterior_fit <- stan(file = "https://raw.githubusercontent.com/vnminin/sismid_mcmc_one/main/2023/code/SIR.stan",
+posterior_fit <- stan(file = "https://raw.githubusercontent.com/vnminin/icmu-bayes/refs/heads/main/code/sir.stan",
                   data = posterior_object,
                   seed = seed,
                   iter = iterations,
